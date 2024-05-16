@@ -1,0 +1,47 @@
+pipeline {
+    agent any
+    
+    environment {
+        TMP_ENV_FILE = '.env.production'
+        CONTAINER_NAME = 'business-api-container'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', credentialsId: 'ssh-id', url: 'https://github.com/gabrielparanhosdev/business-api'
+            }
+        }
+       stage('Load .env') {
+            steps {
+                withCredentials([file(credentialsId: 'env-prod', variable: 'ENV_FILE')]) {
+                    sh 'cp $ENV_FILE $TMP_ENV_FILE'
+                    sh 'chmod 644 $TMP_ENV_FILE'
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("business-api:latest", ".")
+                }
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                script {
+                    sh """
+                    if [ \$(docker ps -a -q -f name=${CONTAINER_NAME}) ]; then
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+                    fi
+                    """
+                    def dockerImage = docker.image("business-api:latest")
+                    dockerImage.run("-d -p 3000:3000 --name ${CONTAINER_NAME} --env-file $TMP_ENV_FILE")
+                }
+            }
+        }
+    }
+}
